@@ -16,6 +16,7 @@ import {
   fmtINR,
   addDays,
 } from './forecasting.js';
+import { forecastWithValidation } from './model-validation.js';
 import { computeCreditScore, computeRiskBreakdown } from './credit-engine.js';
 import { runWarningEngine } from './warning-engine.js';
 
@@ -201,26 +202,15 @@ function render() {
 
   const currentBalance = balance[balance.length - 1];
   const lastDate = dates[dates.length - 1];
-
-  // 1. Run Holt-Winters Forecasting
-  const hw = holtWinters(
-    netFlows,
-    state.alpha,
-    state.beta,
-    state.gamma,
-    state.horizon,
-    7,
-    0.15
-  );
+  const validated = forecastWithValidation(netFlows, state.horizon);
 
   const fcastDates = [];
   for (let k = 1; k <= state.horizon; k++) {
     fcastDates.push(addDays(lastDate, k));
   }
-
-  const fcastBalance = cumulativeBalance(hw.forecast, currentBalance);
-  const fcastUpper = cumulativeBalance(hw.upper, currentBalance);
-  const fcastLower = cumulativeBalance(hw.lower, currentBalance);
+  const fcastBalance = cumulativeBalance(validated.forecast, currentBalance);
+  const fcastUpper = cumulativeBalance(validated.forecast.map(v => v * 1.15), currentBalance);
+  const fcastLower = cumulativeBalance(validated.forecast.map(v => v * 0.85), currentBalance);
 
   // 2. Outlier Detection
   const od = detectOutliers(outflows, 14, state.kSigma);
@@ -230,7 +220,7 @@ function render() {
   const riskBreakdown = computeRiskBreakdown(scoreResult, days);
 
   // 4. Early Warning Engine
-  const warningResult = runWarningEngine(days, hw.forecast, currentBalance, lastDate, meta);
+  const warningResult = runWarningEngine(days, validated.forecast, currentBalance, lastDate, meta);
 
   // Render active view
   if (state.role === 'msme') {
@@ -247,7 +237,7 @@ function render() {
       scoreResult,
       warningResult,
       meta,
-      hw.forecast,
+      validated.forecast,
       currentBalance,
       lastDate
     );
